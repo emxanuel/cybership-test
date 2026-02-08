@@ -1,5 +1,5 @@
-import type { ICarrier } from "@/carriers/carrier.interface.js";
-import type { RateQuote } from "@/models/rate-quote.js";
+import { IRateProvider } from "@/carriers/carrier.interface.js";
+import { RateQuote } from "@/models/rate-quote.js";
 
 export interface CarrierQuote {
   carrier: string;
@@ -17,9 +17,13 @@ export interface RateServiceResult {
 }
 
 export interface RateServiceConfig {
-  carriers: Record<string, ICarrier>;
+  providers: Record<string, IRateProvider>;
 }
 
+/**
+ * Service for aggregating shipping rates from multiple carriers.
+ * Only works with carriers that implement IRateProvider.
+ */
 export class RateService {
   constructor(private readonly config: RateServiceConfig) {}
 
@@ -28,15 +32,15 @@ export class RateService {
     destination: string,
     weight: number
   ): Promise<RateServiceResult> {
-    const { carriers } = this.config;
-    const entries = Object.entries(carriers);
+    const { providers } = this.config;
+    const entries = Object.entries(providers);
     if (entries.length === 0) {
       return { quotes: [] };
     }
 
     const results = await Promise.allSettled(
-      entries.map(async ([name, carrier]) => {
-        const quote = await carrier.getRates(origin, destination, weight);
+      entries.map(async ([name, provider]) => {
+        const quote = await provider.getRates(origin, destination, weight);
         return { carrier: name, quote };
       })
     );
@@ -58,16 +62,16 @@ export class RateService {
   }
 
 
-  async getRatesFromCarrier(
-    carrierName: string,
+  async getRatesFromProvider(
+    providerName: string,
     origin: string,
     destination: string,
     weight: number
   ): Promise<RateQuote> {
-    const carrier = this.config.carriers[carrierName];
-    if (!carrier) {
-      throw new Error(`Unknown carrier: ${carrierName}`);
+    const provider = this.config.providers[providerName];
+    if (!provider) {
+      throw new Error(`Unknown rate provider: ${providerName}`);
     }
-    return carrier.getRates(origin, destination, weight);
+    return provider.getRates(origin, destination, weight);
   }
 }

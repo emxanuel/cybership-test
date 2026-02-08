@@ -1,31 +1,65 @@
 # Carrier Integration
 
-A TypeScript multi-carrier shipping rate aggregation service with UPS integration.
+A TypeScript multi-carrier shipping rate aggregation service with extensible architecture.
 
 ## Features
 
-- **Multi-carrier architecture**: Pluggable carrier system via `ICarrier` interface
+- **Extensible architecture**: Capability-based interfaces for adding carriers and operations
 - **UPS Rate API v2403**: OAuth 2.0 authentication, rate requests with caching
 - **Rate aggregation**: Query multiple carriers in parallel with error handling
 - **Type-safe**: Full TypeScript with Zod schemas
 - **Tested**: Comprehensive test suite with Vitest
 
-## Project Structure
+## Architecture
+
+### Capability-Based Design
+
+The system uses capability interfaces instead of a monolithic carrier interface. Carriers implement only the capabilities they support:
+
+```typescript
+// Base carrier interface
+interface ICarrier {
+  readonly name: string;
+}
+
+// Capability interfaces
+interface IRateProvider extends ICarrier {
+  getRates(origin: string, destination: string, weight: number): Promise<RateQuote>;
+}
+
+interface ITrackingProvider extends ICarrier {
+  track(trackingNumber: string): Promise<TrackingInfo>;
+}
+
+interface ILabelProvider extends ICarrier {
+  createLabel(shipment: ShipmentRequest): Promise<LabelResponse>;
+}
+```
+
+**Benefits:**
+- Add new carriers without modifying existing code
+- Add new operations without breaking existing functionality
+- Type-safe capability checking
+- Services accept only carriers with required capabilities
+
+### Project Structure
 
 ```
-├── src/                    # Shared, carrier-agnostic code
-│   ├── carriers/          # Carrier interface
-│   ├── models/            # Rate quote, request types
-│   └── services/          # RateService (multi-carrier)
+├── src/                    # Carrier-agnostic domain layer
+│   ├── carriers/          # Capability interfaces (IRateProvider, etc.)
+│   ├── models/            # Domain models (RateQuote, TrackingInfo)
+│   └── services/          # Capability services (RateService, etc.)
 ├── infra/                 # Carrier-specific implementations
-│   ├── auth/             # UPS OAuth
-│   ├── carriers/ups/     # UPS carrier, mapper, types
-│   └── http/             # HTTP client
+│   ├── auth/             # Carrier authentication (ups-auth.ts)
+│   ├── carriers/         # Carrier implementations
+│   │   └── ups/          # UPS-specific code
+│   │       ├── ups-carrier.ts       # Implements IRateProvider
+│   │       ├── ups-rate-request.ts  # UPS API types
+│   │       ├── ups-rate-response.ts # UPS API types
+│   │       └── ups-mapper.ts        # UPS ↔ domain conversion
+│   └── http/             # Shared HTTP client
 ├── config/               # Environment config
 └── __tests__/           # Test files
-    ├── infra/           # Unit tests for infra layer
-    ├── integration/     # Integration tests
-    └── src/             # Unit tests for services
 ```
 
 ## Setup
@@ -85,7 +119,7 @@ import { UpsCarrier } from "./infra/carriers/ups/ups-carrier.js";
 import { env } from "./config/env.js";
 
 const rateService = new RateService({
-  carriers: {
+  providers: {
     ups: new UpsCarrier({
       auth: {
         clientId: env.UPS_CLIENT_ID!,
@@ -105,7 +139,7 @@ const { quotes, errors } = await rateService.getRates("21093", "30005", 10);
 ### Single carrier
 
 ```typescript
-const quote = await rateService.getRatesFromCarrier("ups", "21093", "30005", 10);
+const quote = await rateService.getRatesFromProvider("ups", "21093", "30005", 10);
 ```
 
 ## Testing
@@ -179,7 +213,111 @@ The integration tests verify end-to-end behavior using stubbed HTTP with realist
 
 All tests use realistic payloads from UPS documentation with stubbed HTTP layer.
 
-## Adding a new carrier
+## Extensibility
+
+### Adding a New Carrier
+
+Example: Adding FedEx alongside UPS without modifying existing code.
+
+**1. Create carrier implementation** (`infra/carriers/fedex/fedex-carrier.ts`):
+
+```typescript
+import { IRateProvider } from "@/carriers/carrier.interface.js";
+import { RateQuote } from "@/models/rate-quote.js";
+
+export class FedExCarrier implements IRateProvider {
+  readonly name = "FedEx";
+  
+  async getRates(origin: string, destination: string, weight: number): Promise<RateQuote> {
+    // Build FedEx-specific request
+    const fedexRequest = buildFedExRateRequest({ origin, destination, weight });
+    
+    // Call FedEx API
+    const response = await this.client.post<FedExRateResponse>("/rate/v1/rates", fedexRequest);
+    
+    // Map to generic RateQuote
+    return mapFedExResponseToQuote(response);
+  }
+}
+```
+
+**2. Use alongside existing carriers:**
+
+```typescript
+const rateService = new RateService({
+  providers: {
+    ups: new UpsCarrier({ ... }),
+    fedex: new FedExCarrier({ ... }),  // ← Add without touching UPS code
+  },
+});
+
+const result = await rateService.getRates("12345", "67890", 10);
+// result.quotes contains quotes from both UPS and FedEx
+```
+
+**No changes required to:**
+- UPS carrier code
+- RateService
+- Domain models
+- Existing tests
+
+### Adding a New Operation
+
+Example: Adding tracking capability to an existing carrier.
+
+**1. Extend carrier with new capability:**
+
+```typescript
+export class UpsCarrier implements IRateProvider, ITrackingProvider {
+  readonly name = "UPS";
+  
+  // Existing rate capability (unchanged)
+  async getRates(...): Promise<RateQuote> { /* ... */ }
+  
+  // NEW: Tracking capability
+  async track(trackingNumber: string): Promise<TrackingInfo> {
+    const response = await this.client.get<UpsTrackingResponse>(
+      `/api/track/v1/details/${trackingNumber}`
+    );
+    return mapUpsTrackingResponse(response);
+  }
+}
+```
+
+**2. Create specialized service:**
+
+```typescript
+const trackingService = new TrackingService({
+  providers: { ups }  // Only accepts ITrackingProvider
+});
+
+const tracking = await trackingService.track("1Z999AA10123456784");
+```
+
+**Benefits:**
+- Rate functionality unaffected
+- Each capability tested independently
+- Type-safe - services only accept carriers with required capability
+- Can add tracking to UPS first, FedEx later
+
+### Type-Safe Capability Checking
+
+```typescript
+function supportsTracking(carrier: ICarrier): carrier is ITrackingProvider {
+  return "track" in carrier;
+}
+
+const carrier = new UpsCarrier({ ... });
+
+if (supportsTracking(carrier)) {
+  // TypeScript knows carrier has .track() method
+  await carrier.track("1Z999AA10123456784");
+}
+```
+
+## Adding a new carrier (Legacy Pattern)
+
+For simple rate-only carriers, you can follow this pattern:
 
 1. **Define types** in `infra/carriers/<carrier>/`:
    - `<carrier>-rate-request.ts` – API request types
@@ -190,14 +328,14 @@ All tests use realistic payloads from UPS documentation with stubbed HTTP layer.
    - `mapResponseToQuote()` – maps API response → `RateQuote`
 
 3. **Implement carrier** in `<carrier>-carrier.ts`:
-   - `implements ICarrier`
+   - `implements IRateProvider`
    - `getRates(origin, destination, weight): Promise<RateQuote>`
 
 4. **Add to service**:
 
 ```typescript
 const rateService = new RateService({
-  carriers: {
+  providers: {
     ups: upsCarrier,
     newCarrier: new NewCarrier({ ... }),
   },

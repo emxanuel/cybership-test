@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RateService } from "../../src/services/rate-service.js";
-import type { ICarrier } from "../../src/carriers/carrier.interface.js";
+import type { IRateProvider } from "../../src/carriers/carrier.interface.js";
 import type { RateQuote } from "../../src/models/rate-quote.js";
 
 describe("RateService", () => {
-  let mockUpsCarrier: ICarrier;
+  let mockUpsProvider: IRateProvider;
   let service: RateService;
 
   const mockUpsQuote: RateQuote = {
@@ -15,13 +15,14 @@ describe("RateService", () => {
   };
 
   beforeEach(() => {
-    mockUpsCarrier = {
+    mockUpsProvider = {
+      name: "UPS",
       getRates: vi.fn(async () => mockUpsQuote),
     };
 
     service = new RateService({
-      carriers: {
-        ups: mockUpsCarrier,
+      providers: {
+        ups: mockUpsProvider,
       },
     });
 
@@ -29,7 +30,7 @@ describe("RateService", () => {
   });
 
   describe("getRates", () => {
-    it("should get rates from UPS carrier", async () => {
+    it("should get rates from UPS provider", async () => {
       const result = await service.getRates("12345", "67890", 10);
 
       expect(result.quotes).toHaveLength(1);
@@ -39,23 +40,24 @@ describe("RateService", () => {
       expect(result.errors).toBeUndefined();
     });
 
-    it("should call carrier with correct parameters", async () => {
+    it("should call provider with correct parameters", async () => {
       await service.getRates("12345", "67890", 15);
 
-      expect(mockUpsCarrier.getRates).toHaveBeenCalledWith("12345", "67890", 15);
+      expect(mockUpsProvider.getRates).toHaveBeenCalledWith("12345", "67890", 15);
     });
 
-    it("should handle carrier errors without failing entire request", async () => {
-      const errorCarrier: ICarrier = {
+    it("should handle provider errors without failing entire request", async () => {
+      const errorProvider: IRateProvider = {
+        name: "BrokenProvider",
         getRates: vi.fn(async () => {
           throw new Error("API error");
         }),
       };
 
       const serviceWithError = new RateService({
-        carriers: {
-          ups: mockUpsCarrier,
-          broken: errorCarrier,
+        providers: {
+          ups: mockUpsProvider,
+          broken: errorProvider,
         },
       });
 
@@ -68,23 +70,25 @@ describe("RateService", () => {
       expect(result.errors?.[0].error).toBeInstanceOf(Error);
     });
 
-    it("should collect all errors when multiple carriers fail", async () => {
-      const errorCarrier1: ICarrier = {
+    it("should collect all errors when multiple providers fail", async () => {
+      const errorProvider1: IRateProvider = {
+        name: "Broken1",
         getRates: vi.fn(async () => {
           throw new Error("Error 1");
         }),
       };
 
-      const errorCarrier2: ICarrier = {
+      const errorProvider2: IRateProvider = {
+        name: "Broken2",
         getRates: vi.fn(async () => {
           throw new Error("Error 2");
         }),
       };
 
       const serviceWithErrors = new RateService({
-        carriers: {
-          broken1: errorCarrier1,
-          broken2: errorCarrier2,
+        providers: {
+          broken1: errorProvider1,
+          broken2: errorProvider2,
         },
       });
 
@@ -98,8 +102,8 @@ describe("RateService", () => {
       ]);
     });
 
-    it("should return empty quotes when no carriers configured", async () => {
-      const emptyService = new RateService({ carriers: {} });
+    it("should return empty quotes when no providers configured", async () => {
+      const emptyService = new RateService({ providers: {} });
 
       const result = await emptyService.getRates("12345", "67890", 10);
 
@@ -107,15 +111,17 @@ describe("RateService", () => {
       expect(result.errors).toBeUndefined();
     });
 
-    it("should run multiple carriers in parallel", async () => {
-      const carrier1: ICarrier = {
+    it("should run multiple providers in parallel", async () => {
+      const provider1: IRateProvider = {
+        name: "Provider1",
         getRates: vi.fn(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
           return mockUpsQuote;
         }),
       };
 
-      const carrier2: ICarrier = {
+      const provider2: IRateProvider = {
+        name: "Provider2",
         getRates: vi.fn(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
           return mockUpsQuote;
@@ -123,9 +129,9 @@ describe("RateService", () => {
       };
 
       const parallelService = new RateService({
-        carriers: {
-          ups1: carrier1,
-          ups2: carrier2,
+        providers: {
+          ups1: provider1,
+          ups2: provider2,
         },
       });
 
@@ -138,9 +144,9 @@ describe("RateService", () => {
     });
   });
 
-  describe("getRatesFromCarrier", () => {
-    it("should get rate from specific carrier", async () => {
-      const quote = await service.getRatesFromCarrier(
+  describe("getRatesFromProvider", () => {
+    it("should get rate from specific provider", async () => {
+      const quote = await service.getRatesFromProvider(
         "ups",
         "12345",
         "67890",
@@ -148,43 +154,45 @@ describe("RateService", () => {
       );
 
       expect(quote).toEqual(mockUpsQuote);
-      expect(mockUpsCarrier.getRates).toHaveBeenCalledWith("12345", "67890", 10);
+      expect(mockUpsProvider.getRates).toHaveBeenCalledWith("12345", "67890", 10);
     });
 
-    it("should throw error for unknown carrier", async () => {
+    it("should throw error for unknown provider", async () => {
       await expect(
-        service.getRatesFromCarrier("dhl", "12345", "67890", 10)
-      ).rejects.toThrow("Unknown carrier: dhl");
+        service.getRatesFromProvider("dhl", "12345", "67890", 10)
+      ).rejects.toThrow("Unknown rate provider: dhl");
     });
 
-    it("should propagate carrier errors", async () => {
-      const errorCarrier: ICarrier = {
+    it("should propagate provider errors", async () => {
+      const errorProvider: IRateProvider = {
+        name: "ErrorProvider",
         getRates: vi.fn(async () => {
-          throw new Error("Carrier API error");
+          throw new Error("Provider API error");
         }),
       };
 
       const serviceWithError = new RateService({
-        carriers: {
-          error: errorCarrier,
+        providers: {
+          error: errorProvider,
         },
       });
 
       await expect(
-        serviceWithError.getRatesFromCarrier("error", "12345", "67890", 10)
-      ).rejects.toThrow("Carrier API error");
+        serviceWithError.getRatesFromProvider("error", "12345", "67890", 10)
+      ).rejects.toThrow("Provider API error");
     });
   });
 
   describe("edge cases", () => {
-    it("should handle carrier returning invalid data gracefully", async () => {
-      const invalidCarrier: ICarrier = {
+    it("should handle provider returning invalid data gracefully", async () => {
+      const invalidProvider: IRateProvider = {
+        name: "InvalidProvider",
         getRates: vi.fn(async () => ({} as RateQuote)),
       };
 
       const serviceWithInvalid = new RateService({
-        carriers: {
-          invalid: invalidCarrier,
+        providers: {
+          invalid: invalidProvider,
         },
       });
 
@@ -194,8 +202,9 @@ describe("RateService", () => {
       expect(result.quotes[0].quote).toEqual({});
     });
 
-    it("should preserve carrier order in results", async () => {
-      const carrier2: ICarrier = {
+    it("should preserve provider order in results", async () => {
+      const provider2: IRateProvider = {
+        name: "Provider2",
         getRates: vi.fn(async () => ({
           serviceCode: "01",
           serviceName: "UPS Next Day",
@@ -205,16 +214,16 @@ describe("RateService", () => {
       };
 
       const orderedService = new RateService({
-        carriers: {
-          ups1: mockUpsCarrier,
-          ups2: carrier2,
+        providers: {
+          ups1: mockUpsProvider,
+          ups2: provider2,
         },
       });
 
       const result = await orderedService.getRates("12345", "67890", 10);
 
-      const carrierNames = result.quotes.map((q) => q.carrier);
-      expect(carrierNames).toEqual(["ups1", "ups2"]);
+      const providerNames = result.quotes.map((q) => q.carrier);
+      expect(providerNames).toEqual(["ups1", "ups2"]);
     });
   });
 });

@@ -1,4 +1,4 @@
-import { ICarrier } from "@/carriers/carrier.interface.js";
+import { IRateProvider } from "@/carriers/carrier.interface.js";
 import { RateQuote } from "@/models/rate-quote.js";
 import { buildUpsRateRequestBody } from "./ups-mapper.js";
 import { type UpsAddressInput } from "./ups-rate-request.js";
@@ -15,7 +15,15 @@ export interface UpsCarrierConfig {
   httpClient?: FetchClient;
 }
 
-export class UpsCarrier implements ICarrier {
+/**
+ * UPS carrier implementation supporting rate quotes.
+ * Implements IRateProvider to provide shipping rate capability.
+ * 
+ * To add more UPS capabilities (tracking, labels, etc.),
+ * implement additional capability interfaces (ITrackingProvider, ILabelProvider, etc.)
+ */
+export class UpsCarrier implements IRateProvider {
+  readonly name = "UPS";
   private readonly client: FetchClient;
 
   constructor(private readonly config: UpsCarrierConfig) {
