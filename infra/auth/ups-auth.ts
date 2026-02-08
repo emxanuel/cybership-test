@@ -1,18 +1,12 @@
-/**
- * UPS OAuth 2.0 client credentials flow.
- * Tokens expire in 4 hours; this module caches and refreshes automatically.
- * @see https://developer.ups.com/oauth-developer-guide
- */
+import { FetchClient } from "../http/fetch-client.js";
 
 const TOKEN_PATH = "/security/v1/oauth/token";
 const GRANT_TYPE = "client_credentials";
-/** Refresh token when this many seconds before expiry (4h = 14400s). */
 const REFRESH_BUFFER_SEC = 300;
 
 export interface UpsAuthConfig {
   clientId: string;
   clientSecret: string;
-  /** Base URL, e.g. https://wwwcie.ups.com (sandbox) or https://onlinetools.ups.com (prod). */
   baseUrl: string;
 }
 
@@ -56,36 +50,25 @@ function parseTokenResponse(body: unknown): UpsTokenResponse {
   throw new Error("Invalid UPS token response: missing access_token");
 }
 
-/**
- * Request a new access token from UPS OAuth endpoint.
- */
 export async function fetchUpsAccessToken(config: UpsAuthConfig): Promise<UpsTokenResponse> {
-  const url = `${config.baseUrl.replace(/\/$/, "")}${TOKEN_PATH}`;
   const credentials = b64(`${config.clientId}:${config.clientSecret}`);
+  const client = new FetchClient({ baseUrl: config.baseUrl });
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "x-merchant-id": config.clientId,
-    },
-    body: new URLSearchParams({ grant_type: GRANT_TYPE }).toString(),
-  });
+  const data = await client.post<unknown>(
+    TOKEN_PATH,
+    new URLSearchParams({ grant_type: GRANT_TYPE }).toString(),
+    {
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "x-merchant-id": config.clientId,
+      },
+    }
+  );
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`UPS OAuth token request failed: ${res.status} ${res.statusText} - ${text}`);
-  }
-
-  const data = (await res.json()) as unknown;
   return parseTokenResponse(data);
 }
 
-/**
- * Returns a valid UPS access token, using cache and refreshing when needed.
- * Pass config (e.g. from env: UPS_CLIENT_ID, UPS_CLIENT_SECRET, UPS_API_BASE_URL).
- */
 export async function getUpsAccessToken(config: UpsAuthConfig): Promise<string> {
   const nowMs = Date.now();
   const refreshAtMs = nowMs + (REFRESH_BUFFER_SEC * 1000);
@@ -105,17 +88,11 @@ export async function getUpsAccessToken(config: UpsAuthConfig): Promise<string> 
   return cached.accessToken;
 }
 
-/**
- * Builds an Authorization header value for UPS API requests.
- */
 export async function getUpsAuthorizationHeader(config: UpsAuthConfig): Promise<string> {
   const token = await getUpsAccessToken(config);
   return `Bearer ${token}`;
 }
 
-/**
- * Clears the in-memory token cache (e.g. for testing or credential rotation).
- */
 export function clearUpsTokenCache(): void {
   cached = null;
 }

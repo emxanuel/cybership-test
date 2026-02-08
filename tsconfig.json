@@ -7,12 +7,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "infra/**/*", "services/**/*", "config/**/*"],
+  "include": ["src/**/*", "infra/**/*", "config/**/*", "env.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -4,19 +4,25 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
-    "start": "tsx src/index.ts"
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.22.0",
   "devDependencies": {
+    "@vitest/coverage-v8": "4.0.18",
+    "@vitest/ui": "^4.0.18",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@types/node": "^25.2.2",
+    "dotenv": "^17.2.4",
     "zod": "^4.3.6"
   }
 }
