@@ -1,78 +1,74 @@
-# Carrier Integration
+# Carrier Integration Service
 
-A TypeScript multi-carrier shipping rate aggregation service with extensible architecture.
+A TypeScript multi-carrier shipping rate aggregation service for UPS with extensible architecture.
 
-## Features
+## Design Decisions
 
-- **Extensible architecture**: Capability-based interfaces for adding carriers and operations
-- **UPS Rate API v2403**: OAuth 2.0 authentication, rate requests with caching
-- **Rate aggregation**: Query multiple carriers in parallel with error handling
-- **Type-safe**: Full TypeScript with Zod schemas
-- **Tested**: Comprehensive test suite with Vitest
+### Capability-Based Architecture
 
-## Architecture
-
-### Capability-Based Design
-
-The system uses capability interfaces instead of a monolithic carrier interface. Carriers implement only the capabilities they support:
-
-```typescript
-// Base carrier interface
-interface ICarrier {
-  readonly name: string;
-}
-
-// Capability interfaces
-interface IRateProvider extends ICarrier {
-  getRates(origin: string, destination: string, weight: number): Promise<RateQuote>;
-}
-
-interface ITrackingProvider extends ICarrier {
-  track(trackingNumber: string): Promise<TrackingInfo>;
-}
-
-interface ILabelProvider extends ICarrier {
-  createLabel(shipment: ShipmentRequest): Promise<LabelResponse>;
-}
-```
+I chose a capability-based interface system rather than a monolithic carrier interface. Instead of forcing all carriers to implement every operation, carriers implement only the capabilities they support (`IRateProvider`, `ITrackingProvider`, `ILabelProvider`, etc.).
 
 **Benefits:**
 - Add new carriers without modifying existing code
-- Add new operations without breaking existing functionality
-- Type-safe capability checking
-- Services accept only carriers with required capabilities
+- Add new operations (tracking, labels) to existing carriers without breaking rate functionality
+- Type-safe capability checking - services only accept carriers with required capabilities
+- Clear separation between what a carrier *is* and what it *can do*
 
-### Project Structure
+### Clean Separation of Concerns
 
-```
-├── src/                    # Carrier-agnostic domain layer
-│   ├── carriers/          # Capability interfaces (IRateProvider, etc.)
-│   ├── models/            # Domain models (RateQuote, TrackingInfo)
-│   └── services/          # Capability services (RateService, etc.)
-├── infra/                 # Carrier-specific implementations
-│   ├── auth/             # Carrier authentication (ups-auth.ts)
-│   ├── carriers/         # Carrier implementations
-│   │   └── ups/          # UPS-specific code
-│   │       ├── ups-carrier.ts       # Implements IRateProvider
-│   │       ├── ups-rate-request.ts  # UPS API types
-│   │       ├── ups-rate-response.ts # UPS API types
-│   │       └── ups-mapper.ts        # UPS ↔ domain conversion
-│   └── http/             # Shared HTTP client
-├── config/               # Environment config
-└── __tests__/           # Test files
-```
+**Domain layer** (`src/`): Carrier-agnostic interfaces, models, and services
+- `carriers/carrier.interface.ts` - Capability interfaces
+- `models/` - Generic domain models (`RateQuote`, `RateRequestInput`)
+- `services/rate-service.ts` - Multi-carrier orchestration
 
-## Setup
+**Infrastructure layer** (`infra/`): Carrier-specific implementations
+- `carriers/ups/` - UPS-specific code (API types, mappers, carrier implementation)
+- `auth/ups-auth.ts` - OAuth 2.0 token lifecycle management
+- `http/fetch-client.ts` - Shared HTTP client with error handling
 
-### Install dependencies
+This separation ensures adding FedEx requires zero changes to UPS code or domain models.
+
+### Input Validation Before External Calls
+
+All rate requests are validated using Zod schemas before making any API calls. This catches invalid data early, provides clear error messages, and prevents unnecessary API calls. Validation covers address fields, package constraints, weight/dimension units, and required fields.
+
+### OAuth Token Management
+
+UPS OAuth tokens are cached and automatically refreshed when expired. The `UpsOAuthManager` handles acquisition, caching, and refresh transparently - the caller never needs to think about auth.
+
+### Comprehensive Testing Strategy
+
+**Unit tests** for each component in isolation with mocked dependencies.
+
+**Integration tests** verify end-to-end flow using stubbed HTTP responses with realistic UPS API payloads. This validates:
+- Request building from domain models
+- Response parsing and normalization
+- Auth token lifecycle (acquisition, reuse, refresh)
+- Error handling (4xx, 5xx, malformed responses, network failures)
+- Input validation
+
+All 77 tests pass.
+
+### Type Safety
+
+Strong TypeScript types throughout with Zod runtime validation schemas. Path aliases (`@/*`) for clean imports. ESM module system with `NodeNext` resolution.
+
+## How to Run
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm
+
+### Setup
+
+1. Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-### Configure environment
-
-Create `.env`:
+2. Create `.env` file:
 
 ```env
 UPS_API_BASE_URL=https://wwwcie.ups.com
@@ -83,63 +79,21 @@ UPS_SHIPPER_NUMBER=your_shipper_number
 
 Get credentials from [UPS Developer Portal](https://developer.ups.com).
 
-## Usage
+### Run Tests
 
-### Basic rate request
-
-```typescript
-import { UpsCarrier } from "./infra/carriers/ups/ups-carrier.js";
-import { env } from "./config/env.js";
-
-const carrier = new UpsCarrier({
-  auth: {
-    clientId: env.UPS_CLIENT_ID!,
-    clientSecret: env.UPS_CLIENT_SECRET!,
-    baseUrl: env.UPS_API_BASE_URL!,
-  },
-  shipperNumber: env.UPS_SHIPPER_NUMBER!,
-});
-
-const quote = await carrier.getRates({
-  origin: {
-    addressLine1: "123 Main St",
-    city: "Baltimore",
-    state: "MD",
-    postalCode: "21093",
-    country: "US",
-  },
-  destination: {
-    addressLine1: "456 Oak Ave",
-    city: "Atlanta",
-    state: "GA",
-    postalCode: "30005",
-    country: "US",
-  },
-  packages: [
-    {
-      weight: 10,
-      weightUnit: "LB",
-      dimensions: {
-        length: 10,
-        width: 10,
-        height: 10,
-        unit: "IN",
-      },
-    },
-  ],
-  serviceLevel: "GROUND", // Optional: specific service level
-});
-console.log(quote);
-// {
-//   serviceCode: "03",
-//   serviceName: "UPS Ground",
-//   totalPrice: 25.5,
-//   currency: "USD",
-//   breakdown: { basePrice: 25.5, fuelSurcharge: 2.5, ... }
-// }
+```bash
+pnpm test              # Run all tests
+pnpm test:ui           # Open Vitest UI
+pnpm test:coverage     # Generate coverage report
 ```
 
-### Multi-carrier service
+### Build
+
+```bash
+pnpm build             # Compile TypeScript
+```
+
+### Usage Example
 
 ```typescript
 import { RateService } from "./src/services/rate-service.js";
@@ -174,248 +128,63 @@ const { quotes, errors } = await rateService.getRates({
     postalCode: "30005",
     country: "US",
   },
-  packages: [{ weight: 10, weightUnit: "LB" }],
-});
-// quotes: [{ carrier: "ups", quote: { ... } }]
-// errors: [] (if any carriers failed)
-```
-
-### Single carrier
-
-```typescript
-const quote = await rateService.getRatesFromProvider("ups", {
-  origin: {
-    addressLine1: "123 Main St",
-    city: "Baltimore",
-    state: "MD",
-    postalCode: "21093",
-    country: "US",
-  },
-  destination: {
-    addressLine1: "456 Oak Ave",
-    city: "Atlanta",
-    state: "GA",
-    postalCode: "30005",
-    country: "US",
-  },
-  packages: [{ weight: 10, weightUnit: "LB" }],
-});
-```
-
-## Testing
-
-Run all tests:
-
-```bash
-pnpm test
-```
-
-Watch mode:
-
-```bash
-pnpm test
-```
-
-UI mode:
-
-```bash
-pnpm test:ui
-```
-
-Coverage:
-
-```bash
-pnpm test:coverage
-```
-
-### Test Structure
-
-**Unit Tests** (`__tests__/infra/`, `__tests__/src/`)
-- `fetch-client.test.ts` – HTTP client (17 tests)
-- `ups-auth.test.ts` – OAuth token caching (9 tests)
-- `ups-mapper.test.ts` – Request builder & response mapper (15 tests)
-- `ups-carrier.test.ts` – UPS carrier (7 tests)
-- `rate-service.test.ts` – Multi-carrier service (11 tests)
-
-**Integration Tests** (`__tests__/integration/`)
-- `ups-carrier-integration.test.ts` – End-to-end flow with realistic payloads (12 tests)
-
-**71 tests total, all passing.**
-
-### Integration Test Coverage
-
-The integration tests verify end-to-end behavior using stubbed HTTP with realistic UPS API payloads:
-
-✓ **Request payload correctness**
-  - Domain models → UPS API request structure
-  - All required UPS fields present
-  - Proper headers (OAuth, transactionSrc, transId)
-
-✓ **Response parsing & normalization**
-  - Successful responses → normalized `RateQuote`
-  - Negotiated vs. standard rates
-  - Multiple rated shipments (Shop API)
-  - International shipments (different currencies)
-  - Missing data handling
-
-✓ **Auth token lifecycle**
-  - Token acquisition
-  - Token reuse across requests
-  - Refresh on expiry (via fake timers)
-
-✓ **Error handling**
-  - `401 Unauthorized` – structured error
-  - `400 Bad Request` – validation errors
-  - `500 Internal Server Error`
-  - Malformed JSON responses
-  - Network failures/timeouts
-  - Missing `RatedShipment` in response
-
-All tests use realistic payloads from UPS documentation with stubbed HTTP layer.
-
-## Extensibility
-
-### Adding a New Carrier
-
-Example: Adding FedEx alongside UPS without modifying existing code.
-
-**1. Create carrier implementation** (`infra/carriers/fedex/fedex-carrier.ts`):
-
-```typescript
-import { IRateProvider } from "@/carriers/carrier.interface.js";
-import { RateQuote } from "@/models/rate-quote.js";
-
-export class FedExCarrier implements IRateProvider {
-  readonly name = "FedEx";
-  
-  async getRates(origin: string, destination: string, weight: number): Promise<RateQuote> {
-    // Build FedEx-specific request
-    const fedexRequest = buildFedExRateRequest({ origin, destination, weight });
-    
-    // Call FedEx API
-    const response = await this.client.post<FedExRateResponse>("/rate/v1/rates", fedexRequest);
-    
-    // Map to generic RateQuote
-    return mapFedExResponseToQuote(response);
-  }
-}
-```
-
-**2. Use alongside existing carriers:**
-
-```typescript
-const rateService = new RateService({
-  providers: {
-    ups: new UpsCarrier({ ... }),
-    fedex: new FedExCarrier({ ... }),  // ← Add without touching UPS code
-  },
+  packages: [
+    {
+      weight: 10,
+      weightUnit: "LB",
+      dimensions: {
+        length: 10,
+        width: 10,
+        height: 10,
+        unit: "IN",
+      },
+    },
+  ],
+  serviceLevel: "GROUND", // Optional
 });
 
-const result = await rateService.getRates("12345", "67890", 10);
-// result.quotes contains quotes from both UPS and FedEx
+console.log(quotes);
+// [{ carrier: "ups", quote: { serviceCode: "03", serviceName: "UPS Ground", totalPrice: 25.5, currency: "USD" } }]
 ```
 
-**No changes required to:**
-- UPS carrier code
-- RateService
-- Domain models
-- Existing tests
+## What I Would Improve Given More Time
 
-### Adding a New Operation
+### Multi-Package Support
 
-Example: Adding tracking capability to an existing carrier.
+Currently `UpsCarrier.getRates()` only processes the first package. Extend to handle multiple packages properly, including carrier-specific multi-package rules.
 
-**1. Extend carrier with new capability:**
+### Rate Caching
 
-```typescript
-export class UpsCarrier implements IRateProvider, ITrackingProvider {
-  readonly name = "UPS";
-  
-  // Existing rate capability (unchanged)
-  async getRates(...): Promise<RateQuote> { /* ... */ }
-  
-  // NEW: Tracking capability
-  async track(trackingNumber: string): Promise<TrackingInfo> {
-    const response = await this.client.get<UpsTrackingResponse>(
-      `/api/track/v1/details/${trackingNumber}`
-    );
-    return mapUpsTrackingResponse(response);
-  }
-}
-```
+Add Redis or in-memory caching for rate quotes with TTL (e.g., 5 minutes). Many rate requests are duplicates - caching would reduce API calls and improve performance.
 
-**2. Create specialized service:**
+### Retry Logic with Exponential Backoff
 
-```typescript
-const trackingService = new TrackingService({
-  providers: { ups }  // Only accepts ITrackingProvider
-});
+Add automatic retry for transient failures (network timeouts, 5xx errors) with exponential backoff and jitter. UPS rate limiting would benefit from smart retry logic.
 
-const tracking = await trackingService.track("1Z999AA10123456784");
-```
+### Observability
 
-**Benefits:**
-- Rate functionality unaffected
-- Each capability tested independently
-- Type-safe - services only accept carriers with required capability
-- Can add tracking to UPS first, FedEx later
+- Structured logging (Winston/Pino) with correlation IDs
+- Metrics (Prometheus) for API call duration, error rates, cache hit rates
+- OpenTelemetry tracing for distributed request tracking
 
-### Type-Safe Capability Checking
+### Enhanced Error Handling
 
-```typescript
-function supportsTracking(carrier: ICarrier): carrier is ITrackingProvider {
-  return "track" in carrier;
-}
+- Carrier-specific error code mapping (UPS error codes → human-readable messages)
+- Partial success handling (some carriers succeed, others fail)
+- Circuit breaker pattern to avoid cascading failures
 
-const carrier = new UpsCarrier({ ... });
+### API Rate Limiting
 
-if (supportsTracking(carrier)) {
-  // TypeScript knows carrier has .track() method
-  await carrier.track("1Z999AA10123456784");
-}
-```
+Implement request rate limiting per carrier to stay within API quotas. Track usage and throttle requests proactively.
 
-## Adding a new carrier (Legacy Pattern)
+### Performance Optimizations
 
-For simple rate-only carriers, you can follow this pattern:
+- HTTP/2 connection pooling for carrier APIs
+- Batch requests where supported by carrier APIs
+- Parallel execution optimization (currently uses `Promise.allSettled`, could tune concurrency)
 
-1. **Define types** in `infra/carriers/<carrier>/`:
-   - `<carrier>-rate-request.ts` – API request types
-   - `<carrier>-rate-response.ts` – API response types
+### Input Validation Enhancements
 
-2. **Implement mapper** in `<carrier>-mapper.ts`:
-   - `buildRequestBody()` – maps origin/destination/weight → API request
-   - `mapResponseToQuote()` – maps API response → `RateQuote`
-
-3. **Implement carrier** in `<carrier>-carrier.ts`:
-   - `implements IRateProvider`
-   - `getRates(origin, destination, weight): Promise<RateQuote>`
-
-4. **Add to service**:
-
-```typescript
-const rateService = new RateService({
-  providers: {
-    ups: upsCarrier,
-    newCarrier: new NewCarrier({ ... }),
-  },
-});
-```
-
-## Scripts
-
-- `pnpm build` – Compile TypeScript
-- `pnpm test` – Run tests
-- `pnpm test:ui` – Open Vitest UI
-- `pnpm test:coverage` – Generate coverage report
-
-## Tech Stack
-
-- **TypeScript 5.9** (strict mode, ESM)
-- **Vitest 4.0** (testing)
-- **Zod 4.3** (schemas)
-- **Node 20+** (native fetch, crypto.randomUUID)
-
-## License
-
-ISC
+- Address verification API integration
+- Weight/dimension validation against carrier maximums
+- Service level validation per carrier (e.g., UPS doesn't support all service codes for all routes)

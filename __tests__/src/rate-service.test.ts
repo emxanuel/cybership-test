@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { RateService } from "../../src/services/rate-service.js";
+import { RateService, ValidationError } from "../../src/services/rate-service.js";
 import type { IRateProvider } from "../../src/carriers/carrier.interface.js";
 import type { RateQuote } from "../../src/models/rate-quote.js";
 import { buildTestRateRequest } from "../helpers/test-fixtures.js";
@@ -28,6 +28,153 @@ describe("RateService", () => {
     });
 
     vi.clearAllMocks();
+  });
+
+  describe("Input validation", () => {
+    it("should validate request before calling providers", async () => {
+      const invalidRequest = {
+        origin: {
+          addressLine1: "",  // Invalid: empty
+          city: "Baltimore",
+          state: "MD",
+          postalCode: "21093",
+          country: "US",
+        },
+        destination: {
+          addressLine1: "456 Oak Ave",
+          city: "Atlanta",
+          state: "GA",
+          postalCode: "30005",
+          country: "US",
+        },
+        packages: [{ weight: 10, weightUnit: "LB" as const }],
+      };
+
+      await expect(service.getRates(invalidRequest as any)).rejects.toThrow(ValidationError);
+      expect(mockUpsProvider.getRates).not.toHaveBeenCalled();
+    });
+
+    it("should reject negative weight", async () => {
+      const invalidRequest = {
+        origin: {
+          addressLine1: "123 Main St",
+          city: "Baltimore",
+          state: "MD",
+          postalCode: "21093",
+          country: "US",
+        },
+        destination: {
+          addressLine1: "456 Oak Ave",
+          city: "Atlanta",
+          state: "GA",
+          postalCode: "30005",
+          country: "US",
+        },
+        packages: [{ weight: -5, weightUnit: "LB" as const }],
+      };
+
+      await expect(service.getRates(invalidRequest as any)).rejects.toThrow(ValidationError);
+      expect(mockUpsProvider.getRates).not.toHaveBeenCalled();
+    });
+
+    it("should reject invalid country code", async () => {
+      const invalidRequest = {
+        origin: {
+          addressLine1: "123 Main St",
+          city: "Baltimore",
+          state: "MD",
+          postalCode: "21093",
+          country: "USA", // Invalid: should be 2 letters
+        },
+        destination: {
+          addressLine1: "456 Oak Ave",
+          city: "Atlanta",
+          state: "GA",
+          postalCode: "30005",
+          country: "US",
+        },
+        packages: [{ weight: 10, weightUnit: "LB" as const }],
+      };
+
+      await expect(service.getRates(invalidRequest as any)).rejects.toThrow(ValidationError);
+      expect(mockUpsProvider.getRates).not.toHaveBeenCalled();
+    });
+
+    it("should reject empty packages array", async () => {
+      const invalidRequest = {
+        origin: {
+          addressLine1: "123 Main St",
+          city: "Baltimore",
+          state: "MD",
+          postalCode: "21093",
+          country: "US",
+        },
+        destination: {
+          addressLine1: "456 Oak Ave",
+          city: "Atlanta",
+          state: "GA",
+          postalCode: "30005",
+          country: "US",
+        },
+        packages: [],
+      };
+
+      await expect(service.getRates(invalidRequest as any)).rejects.toThrow(ValidationError);
+      expect(mockUpsProvider.getRates).not.toHaveBeenCalled();
+    });
+
+    it("should reject invalid state code", async () => {
+      const invalidRequest = {
+        origin: {
+          addressLine1: "123 Main St",
+          city: "Baltimore",
+          state: "Maryland", // Invalid: should be 2 letters
+          postalCode: "21093",
+          country: "US",
+        },
+        destination: {
+          addressLine1: "456 Oak Ave",
+          city: "Atlanta",
+          state: "GA",
+          postalCode: "30005",
+          country: "US",
+        },
+        packages: [{ weight: 10, weightUnit: "LB" as const }],
+      };
+
+      await expect(service.getRates(invalidRequest as any)).rejects.toThrow(ValidationError);
+      expect(mockUpsProvider.getRates).not.toHaveBeenCalled();
+    });
+
+    it("should provide detailed validation errors", async () => {
+      const invalidRequest = {
+        origin: {
+          addressLine1: "",
+          city: "",
+          state: "INVALID",
+          postalCode: "",
+          country: "INVALID",
+        },
+        destination: {
+          addressLine1: "456 Oak Ave",
+          city: "Atlanta",
+          state: "GA",
+          postalCode: "30005",
+          country: "US",
+        },
+        packages: [],
+      };
+
+      try {
+        await service.getRates(invalidRequest as any);
+        expect.fail("Should have thrown ValidationError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ValidationError);
+        const validationError = error as ValidationError;
+        expect(validationError.errors.length).toBeGreaterThan(0);
+        expect(validationError.message).toBe("Invalid rate request input");
+      }
+    });
   });
 
   describe("getRates", () => {

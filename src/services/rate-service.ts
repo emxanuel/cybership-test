@@ -1,6 +1,6 @@
 import { IRateProvider } from "@/carriers/carrier.interface.js";
 import type { RateQuote } from "@/models/rate-quote.js";
-import type { RateRequestInput } from "@/models/rate-request.js";
+import { RateRequestInputSchema, type RateRequestInput } from "@/models/rate-request.js";
 
 export interface CarrierQuote {
   carrier: string;
@@ -21,14 +21,37 @@ export interface RateServiceConfig {
   providers: Record<string, IRateProvider>;
 }
 
+export class ValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly errors: string[]
+  ) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
 /**
  * Service for aggregating shipping rates from multiple carriers.
  * Only works with carriers that implement IRateProvider.
+ * Validates all input before making external API calls.
  */
 export class RateService {
   constructor(private readonly config: RateServiceConfig) {}
 
   async getRates(request: RateRequestInput): Promise<RateServiceResult> {
+    // Validate input before any external calls
+    const validation = RateRequestInputSchema.safeParse(request);
+    if (!validation.success) {
+      const errors = validation.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`
+      );
+      throw new ValidationError(
+        "Invalid rate request input",
+        errors
+      );
+    }
+
     const { providers } = this.config;
     const entries = Object.entries(providers);
     if (entries.length === 0) {
@@ -63,6 +86,18 @@ export class RateService {
     providerName: string,
     request: RateRequestInput
   ): Promise<RateQuote> {
+    // Validate input before any external calls
+    const validation = RateRequestInputSchema.safeParse(request);
+    if (!validation.success) {
+      const errors = validation.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`
+      );
+      throw new ValidationError(
+        "Invalid rate request input",
+        errors
+      );
+    }
+
     const provider = this.config.providers[providerName];
     if (!provider) {
       throw new Error(`Unknown rate provider: ${providerName}`);
