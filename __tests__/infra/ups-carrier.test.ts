@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { UpsCarrier } from "../../infra/carriers/ups/ups-carrier.js";
 import type { UpsAuthConfig } from "../../infra/auth/ups-auth.js";
 import { FetchClient } from "../../infra/http/fetch-client.js";
+import { buildTestRateRequest } from "../helpers/test-fixtures.js";
 
 vi.mock("../../infra/auth/ups-auth.js", () => ({
   getUpsAuthorizationHeader: vi.fn(async () => "Bearer mock-token"),
@@ -48,7 +49,8 @@ describe("UpsCarrier", () => {
         },
       });
 
-      const quote = await carrier.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const quote = await carrier.getRates(request);
 
       expect(mockPost).toHaveBeenCalledWith(
         "/api/rating/v2403/rate?additionalinfo=",
@@ -57,12 +59,12 @@ describe("UpsCarrier", () => {
             Shipment: expect.objectContaining({
               ShipFrom: expect.objectContaining({
                 Address: expect.objectContaining({
-                  PostalCode: "12345",
+                  PostalCode: "21093",
                 }),
               }),
               ShipTo: expect.objectContaining({
                 Address: expect.objectContaining({
-                  PostalCode: "67890",
+                  PostalCode: "30005",
                 }),
               }),
             }),
@@ -99,7 +101,8 @@ describe("UpsCarrier", () => {
         },
       });
 
-      await carrier.getRates("12345", "67890", 5);
+      const request = buildTestRateRequest();
+      await carrier.getRates(request);
 
       const requestBody = mockPost.mock.calls[0][1];
       expect(requestBody.RateRequest.Shipment.Shipper.ShipperNumber).toBe(
@@ -117,7 +120,10 @@ describe("UpsCarrier", () => {
         },
       });
 
-      await carrier.getRates("12345", "67890", 15);
+      const request = buildTestRateRequest({
+        packages: [{ weight: 15, weightUnit: "LB" }],
+      });
+      await carrier.getRates(request);
 
       const requestBody = mockPost.mock.calls[0][1];
       expect(
@@ -135,7 +141,8 @@ describe("UpsCarrier", () => {
         },
       });
 
-      await carrier.getRates("12345", "67890", 5);
+      const request = buildTestRateRequest();
+      await carrier.getRates(request);
 
       const requestBody = mockPost.mock.calls[0][1];
       expect(requestBody.RateRequest.Shipment.ShipFrom.Address.CountryCode).toBe(
@@ -156,7 +163,8 @@ describe("UpsCarrier", () => {
         },
       });
 
-      await carrier.getRates("12345", "67890", 5);
+      const request = buildTestRateRequest();
+      await carrier.getRates(request);
 
       const headers = mockPost.mock.calls[0][2].headers;
       expect(headers.transId).toBeDefined();
@@ -168,7 +176,8 @@ describe("UpsCarrier", () => {
         new Error("UPS API error: 500 Internal Server Error")
       );
 
-      await expect(carrier.getRates("12345", "67890", 5)).rejects.toThrow(
+      const request = buildTestRateRequest();
+      await expect(carrier.getRates(request)).rejects.toThrow(
         "UPS API error"
       );
     });

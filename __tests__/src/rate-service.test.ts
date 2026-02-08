@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RateService } from "../../src/services/rate-service.js";
 import type { IRateProvider } from "../../src/carriers/carrier.interface.js";
 import type { RateQuote } from "../../src/models/rate-quote.js";
+import { buildTestRateRequest } from "../helpers/test-fixtures.js";
 
 describe("RateService", () => {
   let mockUpsProvider: IRateProvider;
@@ -31,7 +32,8 @@ describe("RateService", () => {
 
   describe("getRates", () => {
     it("should get rates from UPS provider", async () => {
-      const result = await service.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const result = await service.getRates(request);
 
       expect(result.quotes).toHaveLength(1);
       expect(result.quotes).toEqual([
@@ -41,9 +43,12 @@ describe("RateService", () => {
     });
 
     it("should call provider with correct parameters", async () => {
-      await service.getRates("12345", "67890", 15);
+      const request = buildTestRateRequest({
+        packages: [{ weight: 15, weightUnit: "LB" }],
+      });
+      await service.getRates(request);
 
-      expect(mockUpsProvider.getRates).toHaveBeenCalledWith("12345", "67890", 15);
+      expect(mockUpsProvider.getRates).toHaveBeenCalledWith(request);
     });
 
     it("should handle provider errors without failing entire request", async () => {
@@ -61,7 +66,8 @@ describe("RateService", () => {
         },
       });
 
-      const result = await serviceWithError.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const result = await serviceWithError.getRates(request);
 
       expect(result.quotes).toHaveLength(1);
       expect(result.quotes[0]).toEqual({ carrier: "ups", quote: mockUpsQuote });
@@ -92,7 +98,8 @@ describe("RateService", () => {
         },
       });
 
-      const result = await serviceWithErrors.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const result = await serviceWithErrors.getRates(request);
 
       expect(result.quotes).toHaveLength(0);
       expect(result.errors).toHaveLength(2);
@@ -105,7 +112,8 @@ describe("RateService", () => {
     it("should return empty quotes when no providers configured", async () => {
       const emptyService = new RateService({ providers: {} });
 
-      const result = await emptyService.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const result = await emptyService.getRates(request);
 
       expect(result.quotes).toEqual([]);
       expect(result.errors).toBeUndefined();
@@ -135,8 +143,9 @@ describe("RateService", () => {
         },
       });
 
+      const request = buildTestRateRequest();
       const start = Date.now();
-      await parallelService.getRates("12345", "67890", 10);
+      await parallelService.getRates(request);
       const totalTime = Date.now() - start;
 
       // If sequential, would take 200ms+. Parallel should be ~100ms
@@ -146,20 +155,17 @@ describe("RateService", () => {
 
   describe("getRatesFromProvider", () => {
     it("should get rate from specific provider", async () => {
-      const quote = await service.getRatesFromProvider(
-        "ups",
-        "12345",
-        "67890",
-        10
-      );
+      const request = buildTestRateRequest();
+      const quote = await service.getRatesFromProvider("ups", request);
 
       expect(quote).toEqual(mockUpsQuote);
-      expect(mockUpsProvider.getRates).toHaveBeenCalledWith("12345", "67890", 10);
+      expect(mockUpsProvider.getRates).toHaveBeenCalledWith(request);
     });
 
     it("should throw error for unknown provider", async () => {
+      const request = buildTestRateRequest();
       await expect(
-        service.getRatesFromProvider("dhl", "12345", "67890", 10)
+        service.getRatesFromProvider("dhl", request)
       ).rejects.toThrow("Unknown rate provider: dhl");
     });
 
@@ -177,8 +183,9 @@ describe("RateService", () => {
         },
       });
 
+      const request = buildTestRateRequest();
       await expect(
-        serviceWithError.getRatesFromProvider("error", "12345", "67890", 10)
+        serviceWithError.getRatesFromProvider("error", request)
       ).rejects.toThrow("Provider API error");
     });
   });
@@ -196,7 +203,8 @@ describe("RateService", () => {
         },
       });
 
-      const result = await serviceWithInvalid.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const result = await serviceWithInvalid.getRates(request);
 
       expect(result.quotes).toHaveLength(1);
       expect(result.quotes[0].quote).toEqual({});
@@ -220,7 +228,8 @@ describe("RateService", () => {
         },
       });
 
-      const result = await orderedService.getRates("12345", "67890", 10);
+      const request = buildTestRateRequest();
+      const result = await orderedService.getRates(request);
 
       const providerNames = result.quotes.map((q) => q.carrier);
       expect(providerNames).toEqual(["ups1", "ups2"]);

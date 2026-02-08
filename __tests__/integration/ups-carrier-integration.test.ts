@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { UpsCarrier } from "../../infra/carriers/ups/ups-carrier.js";
 import { clearUpsTokenCache, type UpsAuthConfig } from "../../infra/auth/ups-auth.js";
 import { FetchError } from "../../infra/http/fetch-client.js";
+import { buildTestRateRequest } from "../helpers/test-fixtures.js";
 
 describe("UPS Carrier Integration", () => {
   const mockFetch = vi.fn();
@@ -132,7 +133,7 @@ describe("UPS Carrier Integration", () => {
       });
 
       const carrier = new UpsCarrier(mockConfig);
-      const quote = await carrier.getRates("21093", "30005", 1);
+      const quote = await carrier.getRates(buildTestRateRequest({ packages: [{ weight: 1, weightUnit: "LB" }] }));
 
       // Verify OAuth request was made correctly
       expect(mockFetch).toHaveBeenNthCalledWith(
@@ -226,8 +227,8 @@ describe("UPS Carrier Integration", () => {
 
       const carrier = new UpsCarrier(mockConfig);
 
-      await carrier.getRates("12345", "67890", 5);
-      await carrier.getRates("11111", "22222", 10);
+      await carrier.getRates(buildTestRateRequest());
+      await carrier.getRates(buildTestRateRequest({ packages: [{ weight: 10, weightUnit: "LB" }] }));
 
       // OAuth should only be called once, rates called twice
       const oauthCalls = mockFetch.mock.calls.filter((call) =>
@@ -266,7 +267,7 @@ describe("UPS Carrier Integration", () => {
 
       const carrier = new UpsCarrier(mockConfig);
 
-      await expect(carrier.getRates("12345", "67890", 5)).rejects.toThrow(
+      await expect(carrier.getRates(buildTestRateRequest())).rejects.toThrow(
         /401 Unauthorized/
       );
     });
@@ -303,7 +304,7 @@ describe("UPS Carrier Integration", () => {
       const carrier = new UpsCarrier(mockConfig);
 
       try {
-        await carrier.getRates("12345", "67890", 5);
+        await carrier.getRates(buildTestRateRequest());
         expect.fail("Should have thrown an error");
       } catch (error) {
         expect(error).toBeInstanceOf(FetchError);
@@ -332,7 +333,7 @@ describe("UPS Carrier Integration", () => {
 
       const carrier = new UpsCarrier(mockConfig);
 
-      await expect(carrier.getRates("12345", "67890", 5)).rejects.toThrow(
+      await expect(carrier.getRates(buildTestRateRequest())).rejects.toThrow(
         /500 Internal Server Error/
       );
     });
@@ -359,7 +360,7 @@ describe("UPS Carrier Integration", () => {
       const carrier = new UpsCarrier(mockConfig);
 
       try {
-        await carrier.getRates("12345", "67890", 5);
+        await carrier.getRates(buildTestRateRequest());
         expect.fail("Should have thrown an error");
       } catch (error) {
         expect(error).toBeInstanceOf(FetchError);
@@ -374,7 +375,7 @@ describe("UPS Carrier Integration", () => {
 
       const carrier = new UpsCarrier(mockConfig);
 
-      await expect(carrier.getRates("12345", "67890", 5)).rejects.toThrow(
+      await expect(carrier.getRates(buildTestRateRequest())).rejects.toThrow(
         /Network request failed/
       );
     });
@@ -408,7 +409,7 @@ describe("UPS Carrier Integration", () => {
       });
 
       const carrier = new UpsCarrier(mockConfig);
-      const quote = await carrier.getRates("12345", "67890", 5);
+      const quote = await carrier.getRates(buildTestRateRequest());
 
       // Should return default quote when no rated shipment
       expect(quote).toEqual({
@@ -450,7 +451,7 @@ describe("UPS Carrier Integration", () => {
       });
 
       const carrier = new UpsCarrier(mockConfig);
-      await carrier.getRates("21093", "30005", 10);
+      await carrier.getRates(buildTestRateRequest());
 
       const rateCall = mockFetch.mock.calls[1];
       const requestBody = JSON.parse(rateCall[1].body);
@@ -498,7 +499,7 @@ describe("UPS Carrier Integration", () => {
       });
 
       const carrier = new UpsCarrier(mockConfig);
-      await carrier.getRates("12345", "67890", 5);
+      await carrier.getRates(buildTestRateRequest());
 
       const rateCall = mockFetch.mock.calls[1];
       expect(rateCall[1].headers).toEqual(
@@ -569,7 +570,7 @@ describe("UPS Carrier Integration", () => {
       });
 
       const carrier = new UpsCarrier(mockConfig);
-      const quote = await carrier.getRates("12345", "67890", 5);
+      const quote = await carrier.getRates(buildTestRateRequest());
 
       // Should return first (cheapest/ground) service
       expect(quote.serviceCode).toBe("03");
@@ -610,7 +611,7 @@ describe("UPS Carrier Integration", () => {
       });
 
       const carrier = new UpsCarrier(mockConfig);
-      const quote = await carrier.getRates("10115", "12345", 5);
+      const quote = await carrier.getRates(buildTestRateRequest());
 
       expect(quote.serviceCode).toBe("11");
       expect(quote.serviceName).toBe("UPS Standard");

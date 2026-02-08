@@ -1,4 +1,5 @@
 import { RateQuote } from "../models/rate-quote.js";
+import type { RateRequestInput } from "../models/rate-request.js";
 
 /**
  * Base carrier interface - all carriers must implement this.
@@ -12,7 +13,7 @@ export interface ICarrier {
  * Rate shopping capability - carriers that provide shipping rates implement this.
  */
 export interface IRateProvider extends ICarrier {
-  getRates(origin: string, destination: string, weight: number): Promise<RateQuote>;
+  getRates(request: RateRequestInput): Promise<RateQuote>;
 }
 
 /**
@@ -60,6 +61,17 @@ export interface AddressInput {
   country: string;
 }
 
+export interface PackageInfo {
+  weight: number;
+  weightUnit?: "LB" | "KG";
+  dimensions?: {
+    length: number;
+    width: number;
+    height: number;
+    unit: "IN" | "CM";
+  };
+}
+
 export interface AddressValidationResult {
   isValid: boolean;
   suggestedAddress?: AddressInput;
@@ -71,16 +83,6 @@ export interface ShipmentRequest {
   destination: AddressInput;
   packages: PackageInfo[];
   serviceCode?: string;
-}
-
-export interface PackageInfo {
-  weight: number;
-  dimensions?: {
-    length: number;
-    width: number;
-    height: number;
-    unit: "in" | "cm";
-  };
 }
 
 export interface LabelResponse {

@@ -1,5 +1,6 @@
 import { IRateProvider } from "@/carriers/carrier.interface.js";
-import { RateQuote } from "@/models/rate-quote.js";
+import type { RateQuote } from "@/models/rate-quote.js";
+import type { RateRequestInput } from "@/models/rate-request.js";
 
 export interface CarrierQuote {
   carrier: string;
@@ -27,11 +28,7 @@ export interface RateServiceConfig {
 export class RateService {
   constructor(private readonly config: RateServiceConfig) {}
 
-  async getRates(
-    origin: string,
-    destination: string,
-    weight: number
-  ): Promise<RateServiceResult> {
+  async getRates(request: RateRequestInput): Promise<RateServiceResult> {
     const { providers } = this.config;
     const entries = Object.entries(providers);
     if (entries.length === 0) {
@@ -40,7 +37,7 @@ export class RateService {
 
     const results = await Promise.allSettled(
       entries.map(async ([name, provider]) => {
-        const quote = await provider.getRates(origin, destination, weight);
+        const quote = await provider.getRates(request);
         return { carrier: name, quote };
       })
     );
@@ -64,14 +61,12 @@ export class RateService {
 
   async getRatesFromProvider(
     providerName: string,
-    origin: string,
-    destination: string,
-    weight: number
+    request: RateRequestInput
   ): Promise<RateQuote> {
     const provider = this.config.providers[providerName];
     if (!provider) {
       throw new Error(`Unknown rate provider: ${providerName}`);
     }
-    return provider.getRates(origin, destination, weight);
+    return provider.getRates(request);
   }
 }

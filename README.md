@@ -100,7 +100,35 @@ const carrier = new UpsCarrier({
   shipperNumber: env.UPS_SHIPPER_NUMBER!,
 });
 
-const quote = await carrier.getRates("21093", "30005", 10);
+const quote = await carrier.getRates({
+  origin: {
+    addressLine1: "123 Main St",
+    city: "Baltimore",
+    state: "MD",
+    postalCode: "21093",
+    country: "US",
+  },
+  destination: {
+    addressLine1: "456 Oak Ave",
+    city: "Atlanta",
+    state: "GA",
+    postalCode: "30005",
+    country: "US",
+  },
+  packages: [
+    {
+      weight: 10,
+      weightUnit: "LB",
+      dimensions: {
+        length: 10,
+        width: 10,
+        height: 10,
+        unit: "IN",
+      },
+    },
+  ],
+  serviceLevel: "GROUND", // Optional: specific service level
+});
 console.log(quote);
 // {
 //   serviceCode: "03",
@@ -131,7 +159,23 @@ const rateService = new RateService({
   },
 });
 
-const { quotes, errors } = await rateService.getRates("21093", "30005", 10);
+const { quotes, errors } = await rateService.getRates({
+  origin: {
+    addressLine1: "123 Main St",
+    city: "Baltimore",
+    state: "MD",
+    postalCode: "21093",
+    country: "US",
+  },
+  destination: {
+    addressLine1: "456 Oak Ave",
+    city: "Atlanta",
+    state: "GA",
+    postalCode: "30005",
+    country: "US",
+  },
+  packages: [{ weight: 10, weightUnit: "LB" }],
+});
 // quotes: [{ carrier: "ups", quote: { ... } }]
 // errors: [] (if any carriers failed)
 ```
@@ -139,7 +183,23 @@ const { quotes, errors } = await rateService.getRates("21093", "30005", 10);
 ### Single carrier
 
 ```typescript
-const quote = await rateService.getRatesFromProvider("ups", "21093", "30005", 10);
+const quote = await rateService.getRatesFromProvider("ups", {
+  origin: {
+    addressLine1: "123 Main St",
+    city: "Baltimore",
+    state: "MD",
+    postalCode: "21093",
+    country: "US",
+  },
+  destination: {
+    addressLine1: "456 Oak Ave",
+    city: "Atlanta",
+    state: "GA",
+    postalCode: "30005",
+    country: "US",
+  },
+  packages: [{ weight: 10, weightUnit: "LB" }],
+});
 ```
 
 ## Testing

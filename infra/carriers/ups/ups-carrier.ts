@@ -1,5 +1,6 @@
 import { IRateProvider } from "@/carriers/carrier.interface.js";
-import { RateQuote } from "@/models/rate-quote.js";
+import type { RateQuote } from "@/models/rate-quote.js";
+import type { RateRequestInput } from "@/models/rate-request.js";
 import { buildUpsRateRequestBody } from "./ups-mapper.js";
 import { type UpsAddressInput } from "./ups-rate-request.js";
 import { type UpsRateResponse } from "./ups-rate-response.js";
@@ -35,16 +36,34 @@ export class UpsCarrier implements IRateProvider {
       });
   }
 
-  async getRates(origin: string, destination: string, weight: number): Promise<RateQuote> {
+  async getRates(request: RateRequestInput): Promise<RateQuote> {
     const { auth, shipperNumber } = this.config;
+    const { origin, destination, packages, serviceLevel } = request;
+
+    // Use first package for now (UPS API handles single package in this endpoint)
+    const pkg = packages[0];
+    if (!pkg) {
+      throw new Error("At least one package is required");
+    }
 
     const originAddress: UpsAddressInput = {
-      postalCode: origin,
-      countryCode: "US",
+      postalCode: origin.postalCode,
+      city: origin.city,
+      stateProvinceCode: origin.state,
+      countryCode: origin.country,
+      addressLine: origin.addressLine2 
+        ? [origin.addressLine1, origin.addressLine2]
+        : [origin.addressLine1],
     };
+
     const destAddress: UpsAddressInput = {
-      postalCode: destination,
-      countryCode: "US",
+      postalCode: destination.postalCode,
+      city: destination.city,
+      stateProvinceCode: destination.state,
+      countryCode: destination.country,
+      addressLine: destination.addressLine2
+        ? [destination.addressLine1, destination.addressLine2]
+        : [destination.addressLine1],
     };
 
     const body = buildUpsRateRequestBody({
@@ -52,7 +71,11 @@ export class UpsCarrier implements IRateProvider {
       shipperAddress: originAddress,
       shipFromAddress: originAddress,
       shipToAddress: destAddress,
-      weightLbs: weight,
+      weightLbs: pkg.weightUnit === "KG" ? pkg.weight * 2.20462 : pkg.weight,
+      lengthIn: pkg.dimensions?.unit === "CM" ? pkg.dimensions.length / 2.54 : pkg.dimensions?.length,
+      widthIn: pkg.dimensions?.unit === "CM" ? pkg.dimensions.width / 2.54 : pkg.dimensions?.width,
+      heightIn: pkg.dimensions?.unit === "CM" ? pkg.dimensions.height / 2.54 : pkg.dimensions?.height,
+      serviceCode: serviceLevel,
     });
 
     const authHeader = await getUpsAuthorizationHeader(auth);
